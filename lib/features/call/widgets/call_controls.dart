@@ -1,14 +1,16 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/call_provider.dart';
 
-class CallControls extends StatelessWidget {
+class CallControls extends ConsumerWidget {
   const CallControls({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final CallController controller = Get.find<CallController>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final call = ref.watch(callProvider);
+    final callNotifier = ref.read(callProvider.notifier);
+    final isVideo = call.isVideoCall;
 
     return Align(
       alignment: Alignment.bottomCenter,
@@ -24,62 +26,58 @@ class CallControls extends StatelessWidget {
           borderRadius: BorderRadius.circular(30),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
-            child: Obx(() {
-              final isVideo = controller.isVideoCall;
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Mute Mic Button
+                _buildControlButton(
+                  onPressed: () => callNotifier.toggleMute(),
+                  icon: call.isMuted ? Icons.mic_off : Icons.mic,
+                  color: call.isMuted ? Colors.redAccent : Colors.white.withOpacity(0.2),
+                  iconColor: Colors.white,
+                  tooltip: 'Mute',
+                ),
 
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // Mute Mic Button
+                // Speakerphone Button
+                _buildControlButton(
+                  onPressed: () => callNotifier.toggleSpeaker(),
+                  icon: call.isSpeakerOn ? Icons.volume_up : Icons.volume_down,
+                  color: call.isSpeakerOn ? Colors.blueAccent : Colors.white.withOpacity(0.2),
+                  iconColor: Colors.white,
+                  tooltip: 'Speaker',
+                ),
+
+                // Camera Toggle Button (Video Only)
+                if (isVideo)
                   _buildControlButton(
-                    onPressed: () => controller.toggleMute(),
-                    icon: controller.isMuted ? Icons.mic_off : Icons.mic,
-                    color: controller.isMuted ? Colors.redAccent : Colors.white.withOpacity(0.2),
+                    onPressed: () => callNotifier.toggleCamera(),
+                    icon: call.isCameraOn ? Icons.videocam : Icons.videocam_off,
+                    color: call.isCameraOn ? Colors.white.withOpacity(0.2) : Colors.redAccent,
                     iconColor: Colors.white,
-                    tooltip: 'Mute',
+                    tooltip: 'Camera',
                   ),
 
-                  // Speakerphone Button
+                // Switch Camera Button (Video Only)
+                if (isVideo)
                   _buildControlButton(
-                    onPressed: () => controller.toggleSpeaker(),
-                    icon: controller.isSpeakerOn ? Icons.volume_up : Icons.volume_down,
-                    color: controller.isSpeakerOn ? Colors.blueAccent : Colors.white.withOpacity(0.2),
+                    onPressed: () => callNotifier.switchCamera(),
+                    icon: Icons.flip_camera_ios,
+                    color: Colors.white.withOpacity(0.2),
                     iconColor: Colors.white,
-                    tooltip: 'Speaker',
+                    tooltip: 'Flip Camera',
                   ),
 
-                  // Camera Toggle Button (Video Only)
-                  if (isVideo)
-                    _buildControlButton(
-                      onPressed: () => controller.toggleCamera(),
-                      icon: controller.isCameraOn ? Icons.videocam : Icons.videocam_off,
-                      color: controller.isCameraOn ? Colors.white.withOpacity(0.2) : Colors.redAccent,
-                      iconColor: Colors.white,
-                      tooltip: 'Camera',
-                    ),
-
-                  // Switch Camera Button (Video Only)
-                  if (isVideo)
-                    _buildControlButton(
-                      onPressed: () => controller.switchCamera(),
-                      icon: Icons.flip_camera_ios,
-                      color: Colors.white.withOpacity(0.2),
-                      iconColor: Colors.white,
-                      tooltip: 'Flip Camera',
-                    ),
-
-                  // End Call Button (Red, always visible)
-                  _buildControlButton(
-                    onPressed: () => controller.endCall(),
-                    icon: Icons.call_end,
-                    color: Colors.red,
-                    iconColor: Colors.white,
-                    tooltip: 'End Call',
-                    size: 56.0,
-                  ),
-                ],
-              );
-            }),
+                // End Call Button (Red, always visible)
+                _buildControlButton(
+                  onPressed: () => callNotifier.endCall(),
+                  icon: Icons.call_end,
+                  color: Colors.red,
+                  iconColor: Colors.white,
+                  tooltip: 'End Call',
+                  size: 56.0,
+                ),
+              ],
+            ),
           ),
         ),
       ),

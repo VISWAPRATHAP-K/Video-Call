@@ -3,147 +3,141 @@ import 'dart:developer' as developer;
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
-import 'package:get/get.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/models/call_state.dart';
+import '../../../core/models/call_model.dart';
 import '../../../core/services/agora_service.dart';
 import '../../../core/services/callkit_service.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/navigation.dart';
 import '../screens/audio_call_screen.dart';
 import '../screens/video_call_screen.dart';
 
-class CallController extends GetxController {
+class CallNotifier extends StateNotifier<CallModel> {
   final AgoraService _agoraService = AgoraService();
   final CallKitService _callKitService = CallKitService();
+  final ApiService _apiService = ApiService();
 
-  // Observable states
-  final rxCallState = CallState.idle.obs;
-  final rxChannelId = ''.obs;
-  final rxRemoteUid = RxnInt();
-  final rxIsMuted = false.obs;
-  final rxIsSpeakerOn = false.obs;
-  final rxIsCameraOn = true.obs;
-  final rxDuration = 0.obs;
-  final rxIsVideoCall = false.obs;
-  final rxAppId = '28879eb326cc4482952d7fb40d33585a'.obs; // Default App ID provided by user
-  final rxToken = '007eJxTYCiLvb3SPJxfp6Yj4ut9Xy2ptxO2Tdno0nRprnvZpN6Hzu0KDEYWFuaWqUnGRmbJySYmFkaWpkYp5mlJJgYpxsamFqaJK+VNshoCGRkOcexlYmSAQBCfnSElNTff0MiYgQEAnM4fbw=='.obs;
-
-  // Call session tracking
   String? _currentCallUuid;
   Timer? _durationTimer;
   StreamSubscription<CallEvent?>? _callKitSubscription;
 
-  // Getters for views
-  CallState get callState => rxCallState.value;
-  String get channelId => rxChannelId.value;
-  int? get remoteUid => rxRemoteUid.value;
-  bool get isMuted => rxIsMuted.value;
-  bool get isSpeakerOn => rxIsSpeakerOn.value;
-  bool get isCameraOn => rxIsCameraOn.value;
-  int get duration => rxDuration.value;
-  bool get isVideoCall => rxIsVideoCall.value;
-  String get appId => rxAppId.value;
-  String get token => rxToken.value;
-  RtcEngine? get engine => _agoraService.engine;
-
-  String get durationString {
-    final minutes = (duration / 60).floor().toString().padLeft(2, '0');
-    final seconds = (duration % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  @override
-  void onInit() {
-    super.onInit();
+  CallNotifier() : super(CallModel.initial()) {
     _listenToCallKitEvents();
     _checkActiveCalls();
   }
 
   @override
-  void onClose() {
+  void dispose() {
     _durationTimer?.cancel();
     _callKitSubscription?.cancel();
     _agoraService.release();
-    super.onClose();
+    super.dispose();
   }
 
   /// Listen to events from flutter_callkit_incoming
   void _listenToCallKitEvents() {
     _callKitSubscription = _callKitService.onCallEvent.listen((event) async {
       if (event == null) return;
-      developer.log('CallController: Received CallKit Event: ${event.eventName}');
+      developer.log('CallNotifier: Received CallKit Event: ${event.eventName}');
 
       if (event is CallEventActionCallIncoming) {
-        rxCallState.value = CallState.ringing;
+        state = state.copyWith(callState: CallState.ringing);
       } else if (event is CallEventActionCallAccept) {
-        developer.log('CallController: Call accepted via CallKit');
+        developer.log('CallNotifier: Call accepted via CallKit');
         final params = event.callKitParams;
         final acceptedChannelId = params.handle ?? 'demo123';
         final acceptedIsVideo = params.type == 1;
         _currentCallUuid = params.id;
 
-        rxChannelId.value = acceptedChannelId;
-        rxIsVideoCall.value = acceptedIsVideo;
-        rxCallState.value = CallState.connecting;
+        state = state.copyWith(
+          channelId: acceptedChannelId,
+          isVideoCall: acceptedIsVideo,
+          callState: CallState.connecting,
+          isMuted: false,
+          isCameraOn: true,
+          isSpeakerOn: acceptedIsVideo,
+        );
 
-        // Open calling screen before connecting Agora
+        // Fetch receiver's Agora RTC token from the backend
+        try {
+          final response = await _apiService.acceptCall(channelName: acceptedChannelId);
+          if (response.statusCode == 200) {
+            final token = response.data['token'] ?? '';
+            state = state.copyWith(token: token);
+          }
+        } catch (e) {
+          developer.log('CallNotifier Error fetching accept token: $e');
+        }
+
+        // Navigate to calling screen
         _navigateToCallScreen();
 
         // Connect to Agora channel
         await _joinAgoraChannel();
       } else if (event is CallEventActionCallDecline) {
-        developer.log('CallController: Call declined via CallKit');
+        developer.log('CallNotifier: Call declined via CallKit');
         _cleanupCallSession();
       } else if (event is CallEventActionCallEnded) {
-        developer.log('CallController: Call ended via CallKit');
+        developer.log('CallNotifier: Call ended via CallKit');
         _cleanupCallSession();
       } else if (event is CallEventActionCallTimeout) {
-        developer.log('CallController: Call timeout (missed)');
+        developer.log('CallNotifier: Call timeout (missed)');
         _cleanupCallSession();
       }
     });
   }
 
-  /// Check if there are active calls when app launches (e.g. from terminated state)
+  /// Check if there are active calls when app launches
   Future<void> _checkActiveCalls() async {
     try {
       final activeCalls = await _callKitService.getActiveCalls();
       if (activeCalls != null && activeCalls.isNotEmpty) {
-        developer.log('CallController: Active calls found on startup: $activeCalls');
+        developer.log('CallNotifier: Active calls found on startup: $activeCalls');
         final latestCall = activeCalls.last;
+        String? activeUuid;
+        String activeChannelId = 'demo123';
+        bool activeIsVideo = false;
+
         if (latestCall is CallKitParams) {
-          _currentCallUuid = latestCall.id;
-          rxChannelId.value = latestCall.handle ?? 'demo123';
-          rxIsVideoCall.value = latestCall.type == 1;
+          activeUuid = latestCall.id;
+          activeChannelId = latestCall.handle ?? 'demo123';
+          activeIsVideo = latestCall.type == 1;
         } else if (latestCall is Map) {
-          _currentCallUuid = latestCall['id']?.toString();
-          rxChannelId.value = latestCall['handle']?.toString() ?? 'demo123';
-          rxIsVideoCall.value = latestCall['type'] == 1;
+          activeUuid = latestCall['id']?.toString();
+          activeChannelId = latestCall['handle']?.toString() ?? 'demo123';
+          activeIsVideo = latestCall['type'] == 1;
         }
 
-        rxCallState.value = CallState.connecting;
+        _currentCallUuid = activeUuid;
+        state = state.copyWith(
+          channelId: activeChannelId,
+          isVideoCall: activeIsVideo,
+          callState: CallState.connecting,
+        );
+
         _navigateToCallScreen();
         await _joinAgoraChannel();
       }
     } catch (e) {
-      developer.log('CallController Error checking active calls: $e');
+      developer.log('CallNotifier Error checking active calls: $e');
     }
   }
 
-  /// Request runtime permissions for Camera, Microphone and Notifications
-  Future<bool> requestPermissions() async {
+  /// Request runtime permissions for Camera, Microphone and Overlay
+  Future<bool> requestPermissions(BuildContext context) async {
     Map<Permission, PermissionStatus> statuses = await [
       Permission.camera,
       Permission.microphone,
     ].request();
 
-    // Request notification permission for Android 13+
     if (await Permission.notification.isDenied) {
       await Permission.notification.request();
     }
 
-    // Request system alert window permission for background overlay support
     if (await Permission.systemAlertWindow.isDenied) {
       await Permission.systemAlertWindow.request();
     }
@@ -152,12 +146,11 @@ class CallController extends GetxController {
     final micGranted = statuses[Permission.microphone]?.isGranted ?? false;
 
     if (!cameraGranted || !micGranted) {
-      Get.snackbar(
-        'Permissions Denied',
-        'Camera and Microphone permissions are required to make calls.',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
-        colorText: Colors.white,
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Camera and Microphone permissions are required to make calls.'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
       return false;
     }
@@ -165,76 +158,101 @@ class CallController extends GetxController {
   }
 
   /// Start an outgoing call
-  Future<void> startOutgoingCall(String channelId, bool isVideo) async {
-    if (rxCallState.value != CallState.idle) return;
+  Future<void> startOutgoingCall({
+    required BuildContext context,
+    required String channelId,
+    required bool isVideo,
+    required int receiverId,
+  }) async {
+    if (state.callState != CallState.idle) return;
 
-    final hasPermissions = await requestPermissions();
+    final hasPermissions = await requestPermissions(context);
     if (!hasPermissions) return;
+
+    state = state.copyWith(
+      callState: CallState.calling,
+      channelId: channelId,
+      isVideoCall: isVideo,
+      isMuted: false,
+      isCameraOn: true,
+      isSpeakerOn: isVideo,
+    );
+
+    developer.log('CallNotifier: Starting outgoing call. Channel: $channelId, Receiver: $receiverId');
 
     final uuid = const Uuid().v4();
     _currentCallUuid = uuid;
-    rxChannelId.value = channelId;
-    rxIsVideoCall.value = isVideo;
-    rxCallState.value = CallState.calling;
-    rxIsMuted.value = false;
-    rxIsCameraOn.value = true;
-    // Set speaker on by default for video, off for audio
-    rxIsSpeakerOn.value = isVideo;
 
-    developer.log('CallController: Starting outgoing call. Channel: $channelId');
-
-    // Notify CallKit of outgoing call
+    // Trigger CallKit outgoing visual feedback
     await _callKitService.startOutgoingCall(
       uuid: uuid,
-      callerName: 'Call Partner',
+      callerName: 'Calling Contact...',
       channelId: channelId,
       isVideo: isVideo,
     );
 
-    // Open call screen immediately
-    _navigateToCallScreen();
+    // Call backend to trigger FCM Call and obtain local Agora Token
+    try {
+      final response = await _apiService.initiateCall(
+        receiverId: receiverId,
+        channelName: channelId,
+        isVideo: isVideo,
+      );
 
-    // Connect to Agora channel
-    await _joinAgoraChannel();
+      if (response.statusCode == 200) {
+        final generatedToken = response.data['token'] ?? '';
+        state = state.copyWith(token: generatedToken);
+
+        // Open call screen immediately
+        _navigateToCallScreen();
+
+        // Connect to Agora channel
+        await _joinAgoraChannel();
+      } else {
+        _cleanupCallSession();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Call failed: ${response.data['message']}')),
+        );
+      }
+    } catch (e) {
+      _cleanupCallSession();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Call failed to connect: $e')),
+      );
+    }
   }
 
   /// Simulate an incoming call locally (backend-less testing)
-  Future<void> simulateIncomingCall(String channelId, bool isVideo) async {
-    if (rxCallState.value != CallState.idle) return;
+  Future<void> simulateIncomingCall(BuildContext context, String channelId, bool isVideo) async {
+    if (state.callState != CallState.idle) return;
 
-    final hasPermissions = await requestPermissions();
+    final hasPermissions = await requestPermissions(context);
     if (!hasPermissions) return;
 
     final uuid = const Uuid().v4();
     _currentCallUuid = uuid;
-    rxChannelId.value = channelId;
-    rxIsVideoCall.value = isVideo;
-    rxIsMuted.value = false;
-    rxIsCameraOn.value = true;
-    rxIsSpeakerOn.value = isVideo;
+    
+    state = state.copyWith(
+      channelId: channelId,
+      isVideoCall: isVideo,
+      isMuted: false,
+      isCameraOn: true,
+      isSpeakerOn: isVideo,
+    );
 
-    developer.log('CallController: Simulating incoming call. Channel: $channelId');
+    developer.log('CallNotifier: Simulating incoming call. Channel: $channelId');
 
     await _callKitService.showIncomingCall(
       uuid: uuid,
-      callerName: 'Incoming Caller',
+      callerName: 'Incoming Simulation',
       channelId: channelId,
       isVideo: isVideo,
     );
-  }
-
-  /// Accept call manually from app UI
-  Future<void> acceptCall() async {
-    if (_currentCallUuid == null) return;
-    developer.log('CallController: Accept call triggered manually');
-    rxCallState.value = CallState.connecting;
-    _navigateToCallScreen();
-    await _joinAgoraChannel();
   }
 
   /// End current call session
   Future<void> endCall() async {
-    developer.log('CallController: Ending call manually');
+    developer.log('CallNotifier: Ending call manually');
     if (_currentCallUuid != null) {
       await _callKitService.endCall(_currentCallUuid!);
     }
@@ -243,92 +261,85 @@ class CallController extends GetxController {
 
   /// Setup Agora Service and Join Channel
   Future<void> _joinAgoraChannel() async {
-    if (appId.isEmpty) {
-      developer.log('CallController Error: Agora App ID is empty');
-      rxCallState.value = CallState.failed;
-      Get.snackbar('Error', 'Agora App ID is empty.');
+    if (state.appId.isEmpty) {
+      developer.log('CallNotifier Error: Agora App ID is empty');
+      state = state.copyWith(callState: CallState.failed);
       return;
     }
 
     try {
-      // Initialize Agora engine and hook callbacks
       await _agoraService.initEngine(
-        appId: appId,
+        appId: state.appId,
         onJoinChannelSuccess: (channel, uid, elapsed) {
-          developer.log('CallController: Local user joined channel: $channel, uid: $uid');
-          rxCallState.value = CallState.connected;
+          developer.log('CallNotifier: Local user joined channel: $channel, uid: $uid');
+          state = state.copyWith(callState: CallState.connected);
           _startTimer();
         },
         onUserJoined: (remoteUid, elapsed) {
-          developer.log('CallController: Remote user joined: $remoteUid');
-          rxRemoteUid.value = remoteUid;
-          // Set speaker on if remote user joins a video call
-          if (rxIsVideoCall.value) {
+          developer.log('CallNotifier: Remote user joined: $remoteUid');
+          state = state.copyWith(remoteUid: () => remoteUid);
+          
+          if (state.isVideoCall) {
             _agoraService.toggleSpeaker(true);
-            rxIsSpeakerOn.value = true;
+            state = state.copyWith(isSpeakerOn: true);
           }
         },
         onUserOffline: (remoteUid) {
-          developer.log('CallController: Remote user offline: $remoteUid');
-          rxRemoteUid.value = null;
-          // In 1-on-1 call, end the call if remote user leaves
+          developer.log('CallNotifier: Remote user offline: $remoteUid');
+          state = state.copyWith(remoteUid: () => null);
           endCall();
         },
         onLeaveChannel: () {
-          developer.log('CallController: Local user left channel');
+          developer.log('CallNotifier: Local user left channel');
         },
-        onConnectionStateChanged: (state, reason) {
-          developer.log('CallController: Connection state changed: $state, reason: $reason');
-          if (state == ConnectionStateType.connectionStateDisconnected ||
-              state == ConnectionStateType.connectionStateFailed) {
-            // Keep call running, but show connecting state if reconnecting
-            if (rxCallState.value == CallState.connected) {
-              rxCallState.value = CallState.connecting;
+        onConnectionStateChanged: (connectionState, reason) {
+          developer.log('CallNotifier: Connection state changed: $connectionState, reason: $reason');
+          if (connectionState == ConnectionStateType.connectionStateDisconnected ||
+              connectionState == ConnectionStateType.connectionStateFailed) {
+            if (state.callState == CallState.connected) {
+              state = state.copyWith(callState: CallState.connecting);
             }
           }
         },
         onError: (err, msg) {
-          developer.log('CallController Error from Agora: $err - $msg');
+          developer.log('CallNotifier Error from Agora: $err - $msg');
           if (err == ErrorCodeType.errTokenExpired) {
-            Get.snackbar('Session Expired', 'Agora token expired.');
             endCall();
           }
         },
       );
 
-      // Trigger Agora speakerphone toggle based on defaults
-      await _agoraService.toggleSpeaker(rxIsSpeakerOn.value);
+      await _agoraService.toggleSpeaker(state.isSpeakerOn);
 
-      // Join Agora channel
       await _agoraService.joinChannel(
-        token: token,
-        channelId: rxChannelId.value,
-        isVideo: rxIsVideoCall.value,
+        token: state.token,
+        channelId: state.channelId,
+        isVideo: state.isVideoCall,
       );
     } catch (e) {
-      developer.log('CallController Error: Agora join failed. $e');
-      rxCallState.value = CallState.failed;
+      developer.log('CallNotifier Error: Agora join failed. $e');
+      state = state.copyWith(callState: CallState.failed);
     }
   }
 
   /// Toggle audio muting
   void toggleMute() {
-    final newState = !rxIsMuted.value;
-    rxIsMuted.value = newState;
+    final newState = !state.isMuted;
+    state = state.copyWith(isMuted: newState);
     _agoraService.toggleMute(newState);
   }
 
   /// Toggle speakerphone
   void toggleSpeaker() {
-    final newState = !rxIsSpeakerOn.value;
-    rxIsSpeakerOn.value = newState;
+    final newState = !state.isSpeakerOn;
+    state = state.copyWith(isSpeakerOn: newState);
     _agoraService.toggleSpeaker(newState);
   }
 
   /// Toggle camera on/off
   void toggleCamera() {
-    final newState = !rxIsCameraOn.value;
-    rxIsCameraOn.value = newState;
+    final newState = !state.isCameraOn;
+    state = state.copyWith(isCameraOn: newState);
     _agoraService.toggleCamera(newState);
   }
 
@@ -339,57 +350,57 @@ class CallController extends GetxController {
 
   /// Navigate to call screen based on type
   void _navigateToCallScreen() {
-    if (rxIsVideoCall.value) {
-      Get.to(() => const VideoCallScreen(), transition: Transition.fadeIn);
-    } else {
-      Get.to(() => const AudioCallScreen(), transition: Transition.fadeIn);
+    final context = navigatorKey.currentContext;
+    if (context != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => state.isVideoCall 
+            ? const VideoCallScreen() 
+            : const AudioCallScreen()
+        ),
+      );
     }
   }
 
   /// Start call duration timer
   void _startTimer() {
     _durationTimer?.cancel();
-    rxDuration.value = 0;
+    state = state.copyWith(duration: 0);
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      rxDuration.value++;
+      state = state.copyWith(duration: state.duration + 1);
     });
   }
 
   /// Cleanup states and release Agora/CallKit resources
   Future<void> _cleanupCallSession() async {
-    developer.log('CallController: Cleaning up call session');
+    developer.log('CallNotifier: Cleaning up call session');
     _durationTimer?.cancel();
     _durationTimer = null;
 
-    rxCallState.value = CallState.ended;
+    state = state.copyWith(callState: CallState.ended);
 
     await _agoraService.leaveChannel();
-    rxRemoteUid.value = null;
-    rxDuration.value = 0;
-    rxIsMuted.value = false;
-    rxIsSpeakerOn.value = false;
-    rxIsCameraOn.value = true;
+    state = state.copyWith(
+      remoteUid: () => null,
+      duration: 0,
+      isMuted: false,
+      isSpeakerOn: false,
+      isCameraOn: true,
+      token: '',
+    );
     _currentCallUuid = null;
 
-    // Return to main screen if currently showing a call screen
-    if (Get.currentRoute.contains('CallScreen') || 
-        Get.currentRoute == '/AudioCallScreen' || 
-        Get.currentRoute == '/VideoCallScreen') {
-      Get.until((route) => route.isFirst);
+    // Pop call screens and return back to Contacts
+    final context = navigatorKey.currentContext;
+    if (context != null) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
 
-    rxCallState.value = CallState.idle;
-  }
-
-  /// Update user's Agora App ID from UI input
-  void updateAppId(String newAppId) {
-    rxAppId.value = newAppId.trim();
-    developer.log('CallController: Agora App ID updated to: ${rxAppId.value}');
-  }
-
-  /// Update user's Agora Token from UI input
-  void updateToken(String newToken) {
-    rxToken.value = newToken.trim();
-    developer.log('CallController: Agora Token updated to: ${rxToken.value}');
+    state = state.copyWith(callState: CallState.idle);
   }
 }
+
+// Global Call Provider
+final callProvider = StateNotifierProvider<CallNotifier, CallModel>((ref) {
+  return CallNotifier();
+});

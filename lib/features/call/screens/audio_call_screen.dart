@@ -1,18 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/call_provider.dart';
 import '../widgets/call_controls.dart';
 import '../../../core/models/call_state.dart';
 
-class AudioCallScreen extends StatelessWidget {
+class AudioCallScreen extends ConsumerWidget {
   const AudioCallScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final CallController controller = Get.find<CallController>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final call = ref.watch(callProvider);
+
+    String statusText = 'Connecting...';
+    if (call.callState == CallState.connected) {
+      statusText = 'Active Call';
+    } else if (call.callState == CallState.calling) {
+      statusText = 'Calling...';
+    } else if (call.callState == CallState.ringing) {
+      statusText = 'Ringing...';
+    }
 
     return Scaffold(
-      backgroundColor: const Color(0xFE1C1C1E),
+      backgroundColor: const Color(0xFF121214),
       body: SafeArea(
         child: Stack(
           children: [
@@ -33,25 +42,14 @@ class AudioCallScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8.0),
-                    Obx(() {
-                      final state = controller.callState;
-                      String statusText = 'Connecting...';
-                      if (state == CallState.connected) {
-                        statusText = 'Active Call';
-                      } else if (state == CallState.calling) {
-                        statusText = 'Calling...';
-                      } else if (state == CallState.ringing) {
-                        statusText = 'Ringing...';
-                      }
-                      return Text(
-                        statusText,
-                        style: const TextStyle(
-                          color: Colors.greenAccent,
-                          fontSize: 14.0,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      );
-                    }),
+                    Text(
+                      statusText,
+                      style: const TextStyle(
+                        color: Colors.greenAccent,
+                        fontSize: 14.0,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -88,25 +86,23 @@ class AudioCallScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24.0),
                   const Text(
-                    'Remote User',
+                    'Active Call Session',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 26.0,
+                      fontSize: 24.0,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 12.0),
-                  Obx(() {
-                    return Text(
-                      controller.durationString,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 20.0,
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w500,
-                      ),
-                    );
-                  }),
+                  Text(
+                    call.durationString,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 20.0,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ],
               ),
             ),
