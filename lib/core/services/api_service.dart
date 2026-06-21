@@ -17,11 +17,7 @@ class ApiService {
 
   // Default IP: 10.0.2.2 is Android emulator local host loopback, localhost for iOS simulator
   static String get defaultBaseUrl {
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5000/api';
-    } else {
-      return 'http://localhost:5000/api';
-    }
+    return 'https://api.viswaprathap.in/api';
   }
 
   void _initDio() {
