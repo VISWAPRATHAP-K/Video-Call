@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:firebase_core/firebase_core.dart';
 
-
+import 'firebase_options.dart';
+import 'core/services/fcm_service.dart';
 import 'features/call/providers/call_provider.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Initialize FCM Service
+  await FCMService().initialize();
   
   // Register the CallController globally
   Get.put(CallController());
@@ -20,7 +30,7 @@ class AgoraCallKitDemoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'Agora CallKit Demo',
+      title: 'Demo App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -53,6 +63,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   bool _cameraGranted = false;
   bool _micGranted = false;
   bool _notificationGranted = false;
+  bool _overlayGranted = false;
 
   @override
   void initState() {
@@ -76,11 +87,13 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     final camera = await Permission.camera.status;
     final mic = await Permission.microphone.status;
     final notification = await Permission.notification.status;
+    final overlay = await Permission.systemAlertWindow.status;
 
     setState(() {
       _cameraGranted = camera.isGranted;
       _micGranted = mic.isGranted;
       _notificationGranted = notification.isGranted;
+      _overlayGranted = overlay.isGranted;
     });
   }
 
@@ -163,6 +176,8 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             _buildPermissionItem('Microphone', _micGranted, Icons.mic),
             const SizedBox(height: 10.0),
             _buildPermissionItem('Notifications', _notificationGranted, Icons.notifications_active),
+            const SizedBox(height: 10.0),
+            _buildPermissionItem('Display over other apps', _overlayGranted, Icons.layers),
           ],
         ),
       ),

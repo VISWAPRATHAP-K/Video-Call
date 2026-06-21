@@ -14,14 +14,15 @@ class CallKitService {
     required String callerName,
     required String channelId,
     required bool isVideo,
+    String? avatar,
   }) async {
-    developer.log('CallKitService: Showing incoming call. UUID: $uuid, Caller: $callerName, Channel: $channelId, Video: $isVideo');
+    developer.log('CallKitService: Showing incoming call. UUID: $uuid, Caller: $callerName, Channel: $channelId, Video: $isVideo, Avatar: $avatar');
 
     final params = CallKitParams(
       id: uuid,
       nameCaller: callerName,
-      appName: 'Agora Video Call',
-      avatar: 'https://i.pravatar.cc/150?img=60',
+      appName: 'Demo App',
+      avatar: (avatar != null && avatar.isNotEmpty) ? avatar : 'https://i.pravatar.cc/150?img=60',
       handle: channelId,
       type: isVideo ? 1 : 0, // 0 = Audio, 1 = Video
       duration: 30000, // Ringing duration in ms (30s)
@@ -36,16 +37,18 @@ class CallKitService {
         'isVideo': isVideo,
       },
       android: const AndroidParams(
-        isCustomNotification: true,
+        isCustomNotification: false,
         isShowLogo: false,
         backgroundColor: '#1C1C1E', // Dark UI background
         actionColor: '#4CAF50',
         textColor: '#FFFFFF',
-        incomingCallNotificationChannelName: 'Incoming Call',
-        missedCallNotificationChannelName: 'Missed Call',
+        incomingCallNotificationChannelName: 'Incoming Call Service V12',
+        missedCallNotificationChannelName: 'Missed Call Service V12',
         isShowFullLockedScreen: true,
+        isImportant: true,
         textAccept: 'Accept',
         textDecline: 'Decline',
+        ringtonePath: 'my_ringtone',
       ),
       ios: IOSParams(
         iconName: 'AppIcon',

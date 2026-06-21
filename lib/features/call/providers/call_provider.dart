@@ -143,6 +143,11 @@ class CallController extends GetxController {
       await Permission.notification.request();
     }
 
+    // Request system alert window permission for background overlay support
+    if (await Permission.systemAlertWindow.isDenied) {
+      await Permission.systemAlertWindow.request();
+    }
+
     final cameraGranted = statuses[Permission.camera]?.isGranted ?? false;
     final micGranted = statuses[Permission.microphone]?.isGranted ?? false;
 
