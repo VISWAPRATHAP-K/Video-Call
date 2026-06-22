@@ -1,14 +1,18 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
-// Try POSTGRES_URL first, fallback to individual vars
-const databaseUrl = process.env.POSTGRES_URL;
+// Try multiple possible variable names from Vercel
+const databaseUrl = process.env.POSTGRES_URL ||
+                    process.env['sb_publishable_oIMZ…5NpO5_POSTGRES_URL'] ||
+                    process.env.SUPABASE_POSTGRES_URL;
 
 let sequelize;
 
 if (databaseUrl) {
     // Use full connection string
-    console.log('✅ Using POSTGRES_URL');
+    console.log('✅ Using POSTGRES_URL from environment');
+    console.log(`📊 Host: ${databaseUrl.split('@')[1]?.split(':')[0] || 'unknown'}`);
+
     sequelize = new Sequelize(databaseUrl, {
         dialect: 'postgres',
         logging: process.env.NODE_ENV === 'development' ? console.log : false,
@@ -26,7 +30,7 @@ if (databaseUrl) {
         }
     });
 } else {
-    // Use individual environment variables
+    // Use individual environment variables as fallback
     console.log('⚠️ POSTGRES_URL not found, using individual variables');
     const host = process.env.DB_HOST || 'localhost';
     const user = process.env.DB_USER || 'postgres';
@@ -36,9 +40,13 @@ if (databaseUrl) {
 
     if (!password) {
         console.error('❌ Database password is missing');
+        console.error('Available environment variables:', Object.keys(process.env).filter(k =>
+            k.includes('POSTGRES') || k.includes('SUPABASE') || k.includes('DB_')
+        ));
         throw new Error('DB_PASS environment variable is required');
     }
 
+    console.log(`📊 Connecting to ${host}:${port}`);
     sequelize = new Sequelize(
         database,
         user,
