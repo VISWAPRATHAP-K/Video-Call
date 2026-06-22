@@ -4,6 +4,7 @@ const path = require('path');
 const sequelize = require('./config/database');
 const userRoutes = require('./routes/userRoutes');
 require('dotenv').config();
+require('pg'); // Explicitly required for Vercel compiler to bundle the PostgreSQL driver
 
 const app = express();
 const PORT = process.env.PORT || 5000;
