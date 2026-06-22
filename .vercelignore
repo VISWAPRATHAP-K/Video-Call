@@ -1,0 +1,18 @@
+# Ignore Flutter platform & build folders
+build/
+.dart_tool/
+.pub-cache/
+.pub/
+android/
+ios/
+windows/
+macos/
+linux/
+web/
+test/
+
+# Ignore backend dependencies & local state
+backend/node_modules/
+backend/uploads/
+backend/.env*
+backend/demo_database.sql
