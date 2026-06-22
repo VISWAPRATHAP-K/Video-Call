@@ -38,7 +38,7 @@ const startServer = async () => {
   try {
     // Authenticate and connect database
     await sequelize.authenticate();
-    console.log('Successfully connected to MySQL database.');
+    console.log('Successfully connected to PostgreSQL database.');
 
     // Sync database tables (creates tables if they do not exist)
     await sequelize.sync({ force: false });
@@ -54,4 +54,14 @@ const startServer = async () => {
   }
 };
 
-startServer();
+if (require.main === module) {
+  startServer();
+} else {
+  // Sync the database for serverless environments
+  sequelize.authenticate()
+    .then(() => sequelize.sync({ force: false }))
+    .then(() => console.log('Database successfully synchronized in serverless environment.'))
+    .catch(err => console.error('Database connection failed in serverless environment:', err.message));
+}
+
+module.exports = app;
