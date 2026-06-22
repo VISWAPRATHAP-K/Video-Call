@@ -15,14 +15,31 @@ if (!databaseUrl) {
 
 console.log('✅ Using POSTGRES_URL from Vercel');
 
-// Create Sequelize instance with proper SSL configuration
-const sequelize = new Sequelize(databaseUrl, {
+// Parse the connection string manually to apply SSL options
+const url = new URL(databaseUrl);
+const host = url.hostname;
+const port = url.port || 6543;
+const database = url.pathname.substring(1);
+const user = url.username;
+const password = url.password;
+
+console.log(`📊 Host: ${host}:${port}`);
+console.log(`📊 Database: ${database}`);
+console.log(`📊 User: ${user}`);
+
+// Create Sequelize instance with explicit SSL configuration
+const sequelize = new Sequelize(database, user, password, {
+    host: host,
+    port: parseInt(port),
     dialect: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     dialectOptions: {
         ssl: {
             require: true,
-            rejectUnauthorized: false  // ← This is the key fix!
+            rejectUnauthorized: false,  // ← This is the key fix!
+            // Add these for extra compatibility
+            sslmode: 'require',
+            ssl: true
         }
     },
     pool: {
@@ -38,6 +55,11 @@ if (process.env.NODE_ENV !== 'production') {
     sequelize.authenticate()
         .then(() => console.log('✅ Supabase PostgreSQL connection established'))
         .catch(err => console.error('⚠️ Database connection warning:', err.message));
+} else {
+    // In production, test connection but don't block startup
+    sequelize.authenticate()
+        .then(() => console.log('✅ Supabase PostgreSQL connection established'))
+        .catch(err => console.error('⚠️ Production database connection warning:', err.message));
 }
 
 module.exports = sequelize;
