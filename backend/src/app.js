@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { admin } = require('./services/fcmService');
 const sequelize = require('./config/database');
 const userRoutes = require('./routes/userRoutes');
 require('dotenv').config();
@@ -31,13 +32,15 @@ app.get('/health', (req, res) => {
 
 // Add this after your routes
 app.get('/api/debug/env', (req, res) => {
-    // Don't expose sensitive data, just check if they exist
     const envCheck = {
         firebase: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+        firebaseProjectId: !!process.env.FIREBASE_PROJECT_ID,
         agoraAppId: !!process.env.AGORA_APP_ID,
         agoraCert: !!process.env.AGORA_APP_CERTIFICATE,
         jwtSecret: !!process.env.JWT_SECRET,
-        env: process.env.NODE_ENV || 'not set'
+        env: process.env.NODE_ENV || 'not set',
+        // Check if Firebase is initialized
+        firebaseInitialized: typeof admin !== 'undefined' && admin.apps.length > 0
     };
     res.json(envCheck);
 });

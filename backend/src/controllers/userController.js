@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { RtcTokenBuilder, RtcRole } = require('agora-token');
-const admin = require('firebase-admin');
+const { admin, fcmInitialized } = require('../services/fcmService');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -17,93 +17,93 @@ const generateToken = (id) => {
 };
 
 // Initialize Firebase Admin dynamically to prevent crashes if key is not yet provided
-// Initialize Firebase Admin from environment variables
-let fcmInitialized = false;
-
-try {
-    // Try to load from environment variable (Vercel)
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        try {
-            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            admin = require('firebase-admin');
-
-            if (!admin.apps.length) {
-                admin.initializeApp({
-                    credential: admin.credential.cert(serviceAccount)
-                });
-                fcmInitialized = true;
-                console.log('✅ Firebase Admin SDK initialized from environment variable');
-            } else {
-                fcmInitialized = true;
-                admin = require('firebase-admin');
-                console.log('✅ Firebase Admin SDK already initialized');
-            }
-        } catch (parseError) {
-            console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT JSON:', parseError.message);
-        }
-    }
-    // Fallback: Try individual environment variables
-    else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
-        try {
-            const serviceAccount = {
-                type: "service_account",
-                project_id: process.env.FIREBASE_PROJECT_ID,
-                private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID || '',
-                private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-                client_email: process.env.FIREBASE_CLIENT_EMAIL,
-                client_id: process.env.FIREBASE_CLIENT_ID || '',
-                auth_uri: "https://accounts.google.com/o/oauth2/auth",
-                token_uri: "https://oauth2.googleapis.com/token",
-                auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-                client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${process.env.FIREBASE_CLIENT_EMAIL}`,
-                universe_domain: "googleapis.com"
-            };
-
-            admin = require('firebase-admin');
-            if (!admin.apps.length) {
-                admin.initializeApp({
-                    credential: admin.credential.cert(serviceAccount)
-                });
-                fcmInitialized = true;
-                console.log('✅ Firebase Admin SDK initialized from individual environment variables');
-            } else {
-                fcmInitialized = true;
-                admin = require('firebase-admin');
-                console.log('✅ Firebase Admin SDK already initialized');
-            }
-        } catch (parseError) {
-            console.error('❌ Failed to initialize Firebase from individual vars:', parseError.message);
-        }
-    }
-    // Fallback: Try local file (development only)
-    else if (process.env.NODE_ENV === 'development') {
-        try {
-            const serviceAccountPath = path.resolve(__dirname, '../../src/config/firebase-service-account.json');
-            if (fs.existsSync(serviceAccountPath)) {
-                const serviceAccount = require(serviceAccountPath);
-                admin = require('firebase-admin');
-                if (!admin.apps.length) {
-                    admin.initializeApp({
-                        credential: admin.credential.cert(serviceAccount)
-                    });
-                    fcmInitialized = true;
-                    console.log('✅ Firebase Admin SDK initialized from local file (development)');
-                } else {
-                    fcmInitialized = true;
-                    admin = require('firebase-admin');
-                }
-            } else {
-                console.warn('⚠️ Local Firebase service account file not found at:', serviceAccountPath);
-            }
-        } catch (fileError) {
-            console.warn('⚠️ Failed to load local Firebase file:', fileError.message);
-        }
-    } else {
-        console.warn('⚠️ No Firebase credentials found in environment variables');
-    }
-} catch (error) {
-    console.error('❌ Firebase initialization error:', error.message);
-}
+//// Initialize Firebase Admin from environment variables
+//let fcmInitialized = false;
+//
+//try {
+//    // Try to load from environment variable (Vercel)
+//    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+//        try {
+//            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+//            admin = require('firebase-admin');
+//
+//            if (!admin.apps.length) {
+//                admin.initializeApp({
+//                    credential: admin.credential.cert(serviceAccount)
+//                });
+//                fcmInitialized = true;
+//                console.log('✅ Firebase Admin SDK initialized from environment variable');
+//            } else {
+//                fcmInitialized = true;
+//                admin = require('firebase-admin');
+//                console.log('✅ Firebase Admin SDK already initialized');
+//            }
+//        } catch (parseError) {
+//            console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT JSON:', parseError.message);
+//        }
+//    }
+//    // Fallback: Try individual environment variables
+//    else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
+//        try {
+//            const serviceAccount = {
+//                type: "service_account",
+//                project_id: process.env.FIREBASE_PROJECT_ID,
+//                private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID || '',
+//                private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+//                client_email: process.env.FIREBASE_CLIENT_EMAIL,
+//                client_id: process.env.FIREBASE_CLIENT_ID || '',
+//                auth_uri: "https://accounts.google.com/o/oauth2/auth",
+//                token_uri: "https://oauth2.googleapis.com/token",
+//                auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+//                client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${process.env.FIREBASE_CLIENT_EMAIL}`,
+//                universe_domain: "googleapis.com"
+//            };
+//
+//            admin = require('firebase-admin');
+//            if (!admin.apps.length) {
+//                admin.initializeApp({
+//                    credential: admin.credential.cert(serviceAccount)
+//                });
+//                fcmInitialized = true;
+//                console.log('✅ Firebase Admin SDK initialized from individual environment variables');
+//            } else {
+//                fcmInitialized = true;
+//                admin = require('firebase-admin');
+//                console.log('✅ Firebase Admin SDK already initialized');
+//            }
+//        } catch (parseError) {
+//            console.error('❌ Failed to initialize Firebase from individual vars:', parseError.message);
+//        }
+//    }
+//    // Fallback: Try local file (development only)
+//    else if (process.env.NODE_ENV === 'development') {
+//        try {
+//            const serviceAccountPath = path.resolve(__dirname, '../../src/config/firebase-service-account.json');
+//            if (fs.existsSync(serviceAccountPath)) {
+//                const serviceAccount = require(serviceAccountPath);
+//                admin = require('firebase-admin');
+//                if (!admin.apps.length) {
+//                    admin.initializeApp({
+//                        credential: admin.credential.cert(serviceAccount)
+//                    });
+//                    fcmInitialized = true;
+//                    console.log('✅ Firebase Admin SDK initialized from local file (development)');
+//                } else {
+//                    fcmInitialized = true;
+//                    admin = require('firebase-admin');
+//                }
+//            } else {
+//                console.warn('⚠️ Local Firebase service account file not found at:', serviceAccountPath);
+//            }
+//        } catch (fileError) {
+//            console.warn('⚠️ Failed to load local Firebase file:', fileError.message);
+//        }
+//    } else {
+//        console.warn('⚠️ No Firebase credentials found in environment variables');
+//    }
+//} catch (error) {
+//    console.error('❌ Firebase initialization error:', error.message);
+//}
 
 // 1. Register User
 exports.register = async (req, res) => {
