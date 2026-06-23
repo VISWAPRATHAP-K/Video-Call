@@ -19,7 +19,6 @@ const generateToken = (id) => {
 // Initialize Firebase Admin dynamically to prevent crashes if key is not yet provided
 // Initialize Firebase Admin from environment variables
 let fcmInitialized = false;
-let admin = null;
 
 try {
     // Try to load from environment variable (Vercel)
