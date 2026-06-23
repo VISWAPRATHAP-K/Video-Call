@@ -29,6 +29,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Add this after your routes
+app.get('/api/debug/env', (req, res) => {
+    // Don't expose sensitive data, just check if they exist
+    const envCheck = {
+        firebase: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+        agoraAppId: !!process.env.AGORA_APP_ID,
+        agoraCert: !!process.env.AGORA_APP_CERTIFICATE,
+        jwtSecret: !!process.env.JWT_SECRET,
+        env: process.env.NODE_ENV || 'not set'
+    };
+    res.json(envCheck);
+});
 // Catch-all route for undefined paths
 app.use((req, res, next) => {
   res.status(404).json({ message: `API endpoint ${req.originalUrl} not found` });
